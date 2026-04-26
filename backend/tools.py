@@ -157,7 +157,7 @@ async def execute_search(query: Union[str, List[str]]) -> dict:
             
             content = f"A Bing search for '{q}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
             return content
-        except Exception:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return f"No results found for '{q}'. Try with a more general query."
     
     # 处理单个或多个查询

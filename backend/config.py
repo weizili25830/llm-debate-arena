@@ -40,6 +40,8 @@ if _raw:
                 'timeout': float(item.get('timeout', LLM_CONFIG['timeout']))
             })
     except (json.JSONDecodeError, TypeError):
+        import logging as _logging
+        _logging.warning("LLM_BASE_URLS 不是合法的 JSON，降级为逗号分隔解析")
         for _url in _raw.split(','):
             _url = _url.strip()
             if _url:

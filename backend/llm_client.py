@@ -266,7 +266,7 @@ def _format_messages(messages: List[Dict]) -> List[Dict]:
     return formatted
 
 
-def _make_error_event(exc: Exception, model_id: str) -> Dict:
+def _make_error_event(exc: Optional[Exception], model_id: str) -> Dict:
     """将异常转换为错误事件 dict"""
     if isinstance(exc, RateLimitError):
         error_msg = f"API 限流错误 (QPM/RPM 超限): {exc}"
