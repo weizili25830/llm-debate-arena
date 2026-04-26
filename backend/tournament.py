@@ -11,7 +11,7 @@ import json
 from .log import logger
 from .models import MatchSession, Turn, PersonalityType, DifficultyLevel
 from .llm_client import query_model_stream
-from .tools import get_debate_tools, execute_tool, get_tools_for_enabled
+from .tools import get_debate_tools, execute_tool, get_tools_for_enabled, use_dashscope_search
 from .judge import judge_match_with_panel_stream
 from .elo import update_elo_ratings
 from .database import save_match, update_match_status
@@ -300,12 +300,16 @@ async def execute_turn_stream(
     if enabled_tools is None:
         enabled_tools = []
     
-    # 根据 enabled_tools 获取工具定义（含厂商内置联网搜索）
+    # 根据 enabled_tools 获取工具定义
     tools = get_tools_for_enabled(enabled_tools)
+    # 联网搜索通过 DashScope enable_search 参数实现，不作为工具定义传递
+    search_enabled = use_dashscope_search(enabled_tools)
     if tools:
         tool_names = [t['function']['name'] if t['type'] == 'function' else t['type'] for t in tools]
         logger.debug(f"使用工具: {tool_names}")
-    else:
+    if search_enabled:
+        logger.debug("启用 DashScope 内置联网搜索")
+    if not tools and not search_enabled:
         logger.debug("未启用任何工具")
     
     # 第一次流式调用 LLM (可能产生工具调用)
@@ -316,7 +320,8 @@ async def execute_turn_stream(
         model_id=model_id,
         messages=messages,
         tools=tools if tools else None,  # 如果没有工具，传 None
-        temperature=0.7
+        temperature=0.7,
+        enable_search=search_enabled
     ):
         if event["type"] == "content":
             # 内容增量
@@ -425,7 +430,8 @@ async def execute_turn_stream(
             model_id=model_id,
             messages=messages,
             tools=tools if tools else None,  # 如果没有工具，传 None
-            temperature=0.7
+            temperature=0.7,
+            enable_search=search_enabled
         ):
             if event["type"] == "content":
                 # 内容增量

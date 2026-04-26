@@ -59,13 +59,13 @@ if not LLM_BASE_URL_CONFIGS:
         'timeout': LLM_CONFIG['timeout']
     }]
 
-AVAILABLE_MODELS = os.getenv("AVAILABLE_MODELS", "gpt-4o,gpt-4o-mini,gpt-5")
+AVAILABLE_MODELS = os.getenv("AVAILABLE_MODELS", "qwen3.5-plus")
 
 # ========== 裁判团配置 ==========
 
 JUDGE_PANEL = [
-    "gpt-4o",
-    "gpt-4o-mini",
+    "qwen3.5-plus",
+    "qwen3.5-plus",
 ]
 
 # ========== 数据库配置 ==========

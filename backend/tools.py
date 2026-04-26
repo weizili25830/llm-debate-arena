@@ -138,8 +138,10 @@ def get_debate_tools() -> List[dict]:
     
     包含：
     - python_interpreter: 函数工具，由后端执行
-    - web_search_preview: 厂商内置联网搜索，由 API 提供商在服务端执行（无需后端执行）
     - calculator: 函数工具，由后端执行
+    
+    注意：联网搜索通过 DashScope 的 enable_search 参数实现，
+    不作为工具定义传递，由 llm_client 在 extra_body 中注入。
     """
     return [
         {
@@ -158,11 +160,6 @@ def get_debate_tools() -> List[dict]:
                     "required": ["code"]
                 }
             }
-        },
-        # 厂商内置联网搜索（OpenAI web_search_preview 等）
-        # 由 API 提供商在服务端执行，无需后端介入
-        {
-            "type": "web_search_preview"
         },
         {
             "type": "function",
@@ -184,13 +181,23 @@ def get_debate_tools() -> List[dict]:
     ]
 
 
+def use_dashscope_search(enabled_tools: List[str]) -> bool:
+    """
+    判断是否应启用 DashScope 厂商内置联网搜索（enable_search）。
+    
+    当 enabled_tools 包含 'web_search' 时返回 True，
+    由调用方在请求参数中注入 extra_body={"enable_search": True}。
+    """
+    return 'web_search' in (enabled_tools or [])
+
+
 def get_tools_for_enabled(enabled_tools: List[str]) -> List[dict]:
     """
     根据已启用的工具名称列表，返回对应的工具定义。
     
     工具名称到定义的映射：
     - "python_interpreter" -> function 类型工具
-    - "web_search"         -> web_search_preview（厂商内置联网搜索）
+    - "web_search"         -> 不返回工具定义，改由 use_dashscope_search() 通过 enable_search 实现
     - "calculator"         -> function 类型工具
     """
     if not enabled_tools:
@@ -200,8 +207,5 @@ def get_tools_for_enabled(enabled_tools: List[str]) -> List[dict]:
     for tool in get_debate_tools():
         if tool['type'] == 'function':
             if tool['function']['name'] in enabled_tools:
-                result.append(tool)
-        elif tool['type'] == 'web_search_preview':
-            if 'web_search' in enabled_tools:
                 result.append(tool)
     return result

@@ -57,10 +57,14 @@ async def query_model_stream(
     model_id: str, 
     messages: List[Dict], 
     temperature: float = 0.7,
-    tools: Optional[List[Dict]] = None
+    tools: Optional[List[Dict]] = None,
+    enable_search: bool = False
 ) -> AsyncGenerator[Dict, None]:
     """
     流式查询 LLM (支持工具调用)，自动遍历多 base_url，并对每个 base_url 重试最多 3 次。
+    
+    enable_search: 当为 True 时，通过 extra_body={"enable_search": True} 启用
+                   DashScope 厂商内置联网搜索（无需单独传递 web_search 工具定义）。
     
     Yields:
         {"type": "content", "delta": "..."}
@@ -68,7 +72,7 @@ async def query_model_stream(
         {"type": "done", "content": "...", "tool_calls": [...]}
         {"type": "error", "error": "...", "error_type": "..."}
     """
-    logger.info(f"开始流式调用模型: {model_id}, 消息数: {len(messages)}")
+    logger.info(f"开始流式调用模型: {model_id}, 消息数: {len(messages)}, enable_search: {enable_search}")
 
     # 格式化消息（公共逻辑）
     formatted_messages = _format_messages(messages)
@@ -83,6 +87,9 @@ async def query_model_stream(
         request_params["tools"] = tools
         tool_names = [t['function']['name'] if t.get('type') == 'function' else t.get('type', '') for t in tools]
         logger.debug(f"使用工具: {tool_names}")
+    if enable_search:
+        request_params["extra_body"] = {"enable_search": True}
+        logger.debug("启用 DashScope 厂商内置联网搜索")
 
     last_error = None
 
