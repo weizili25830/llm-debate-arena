@@ -799,8 +799,8 @@ export default function ArenaNew() {
                     </select>
                   </div>
 
-                  {/* 高级设置 - 单行 */}
-                  <div className="flex items-center space-x-3 mb-3 text-xs">
+                  {/* 高级设置 - 支持换行 */}
+                  <div className="flex flex-wrap items-center gap-3 mb-3 text-xs">
                     <div className="flex items-center space-x-2">
                       <span className="text-gray-600">轮数</span>
                       <select
@@ -812,12 +812,20 @@ export default function ArenaNew() {
                         <option value={1}>1</option>
                         <option value={2}>2</option>
                         <option value={3}>3</option>
+                        <option value={7}>7</option>
+                        <option value={10}>10</option>
+                        <option value={13}>13</option>
+                        <option value={15}>15</option>
+                        <option value={20}>20</option>
+                        <option value={30}>30</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
                       </select>
                     </div>
 
-                    <div className="border-l border-gray-200 pl-3 flex items-center space-x-2">
+                    <div className="border-l border-gray-200 pl-3 flex items-center space-x-2 flex-wrap gap-y-1">
                       <span className="text-gray-600">裁判</span>
-                      {models.slice(0, 5).map((model) => (
+                      {models.map((model) => (
                         <button
                           key={model.value}
                           onClick={() => toggleJudge(model.value)}

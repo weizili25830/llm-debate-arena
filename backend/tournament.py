@@ -17,8 +17,8 @@ from .elo import update_elo_ratings
 from .database import save_match, update_match_status
 from .utils import generate_id
 
-# 比赛超时时间（秒）：15分钟
-MATCH_TIMEOUT_SECONDS = 15 * 60
+# 比赛超时时间（秒）：120分钟
+MATCH_TIMEOUT_SECONDS = 120 * 60
 
 
 async def run_tournament_match(

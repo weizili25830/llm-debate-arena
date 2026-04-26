@@ -13,7 +13,7 @@ import math
 from typing import Any, List, Union
 from datetime import datetime
 from loguru import logger
-from .config import SERPER_API_KEY
+from .config import SERPER_API_KEY, BING_API_KEY
 
 
 async def execute_tool(tool_call: dict) -> Any:
@@ -96,7 +96,7 @@ async def execute_python(code: str, timeout: int = 30) -> dict:
 
 async def execute_search(query: Union[str, List[str]]) -> dict:
     """
-    执行网络搜索 (使用 Serper API)
+    执行网络搜索 (使用 Bing Search API)
     
     支持单个查询或批量查询（最多5个）
     """
@@ -104,86 +104,71 @@ async def execute_search(query: Union[str, List[str]]) -> dict:
     def contains_chinese_basic(text: str) -> bool:
         return any('\u4E00' <= char <= '\u9FFF' for char in text)
     
-    def google_search_with_serp(q: str) -> str:
-        """单个查询的搜索实现"""
-        if not SERPER_API_KEY:
-            return "SERPER_API_KEY is not set. Please set the SERPER_API_KEY environment variable."
+    def bing_search(q: str) -> str:
+        """单个查询的 Bing 搜索实现"""
+        if not BING_API_KEY:
+            return "BING_API_KEY is not set. Please set the BING_API_KEY environment variable."
         
-        conn = http.client.HTTPSConnection("google.serper.dev")
+        import urllib.parse
+        conn = http.client.HTTPSConnection("api.bing.microsoft.com")
         
-        if contains_chinese_basic(q):
-            payload = json.dumps({
-                "q": q,
-                "location": "China",
-                "gl": "cn",
-                "hl": "zh-cn"
-            })
-        else:
-            payload = json.dumps({
-                "q": q,
-                "location": "United States",
-                "gl": "us",
-                "hl": "en"
-            })
+        params = urllib.parse.urlencode({
+            "q": q,
+            "count": 10,
+            "mkt": "zh-CN" if contains_chinese_basic(q) else "en-US",
+        })
         
         headers = {
-            'X-API-KEY': SERPER_API_KEY,
-            'Content-Type': 'application/json'
+            'Ocp-Apim-Subscription-Key': BING_API_KEY,
+            'Accept': 'application/json'
         }
         
         res = None
         for i in range(5):
             try:
-                conn.request("POST", "/search", payload, headers)
+                conn.request("GET", f"/v7.0/search?{params}", headers=headers)
                 res = conn.getresponse()
                 break
             except Exception as e:
                 if i == 4:
-                    return f"Google search Timeout for query '{q}'. Please try again later."
+                    return f"Bing search Timeout for query '{q}'. Please try again later."
                 continue
         
         data = res.read()
         results = json.loads(data.decode("utf-8"))
         
         try:
-            if "organic" not in results:
+            web_pages = results.get("webPages", {}).get("value", [])
+            if not web_pages:
                 raise Exception(f"No results found for query: '{q}'")
             
             web_snippets = []
-            idx = 0
-            if "organic" in results:
-                for page in results["organic"]:
-                    idx += 1
-                    date_published = ""
-                    if "date" in page:
-                        date_published = "\nDate published: " + page["date"]
-                    
-                    source = ""
-                    if "source" in page:
-                        source = "\nSource: " + page["source"]
-                    
-                    snippet = ""
-                    if "snippet" in page:
-                        snippet = "\n" + page["snippet"]
-                    
-                    redacted_version = f"{idx}. [{page['title']}]({page['link']}){date_published}{source}\n{snippet}"
-                    redacted_version = redacted_version.replace("Your browser can't play this video.", "")
-                    web_snippets.append(redacted_version)
+            for idx, page in enumerate(web_pages, 1):
+                date_published = ""
+                if "dateLastCrawled" in page:
+                    date_published = "\nDate published: " + page["dateLastCrawled"][:10]
+                
+                snippet = ""
+                if "snippet" in page:
+                    snippet = "\n" + page["snippet"]
+                
+                redacted_version = f"{idx}. [{page['name']}]({page['url']}){date_published}\n{snippet}"
+                web_snippets.append(redacted_version)
             
-            content = f"A Google search for '{q}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
+            content = f"A Bing search for '{q}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
             return content
-        except:
+        except Exception:
             return f"No results found for '{q}'. Try with a more general query."
     
     # 处理单个或多个查询
     if isinstance(query, str):
-        response = google_search_with_serp(query)
+        response = bing_search(query)
     else:
         # 批量查询（最多5个）
         queries = query[:5]  # 限制最多5个
         responses = []
         for q in queries:
-            responses.append(google_search_with_serp(q))
+            responses.append(bing_search(q))
         response = "\n=======\n".join(responses)
     logger.debug(f"execute_search response: {response}, query: {query}")
     return {
@@ -266,7 +251,7 @@ def get_debate_tools() -> List[dict]:
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "执行 Google 搜索，用于查找事实、数据、最新信息。支持批量搜索（最多5个查询）",
+                "description": "执行 Bing 搜索，用于查找事实、数据、最新信息。支持批量搜索（最多5个查询）",
                 "parameters": {
                     "type": "object",
                     "properties": {
