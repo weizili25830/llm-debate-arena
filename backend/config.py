@@ -62,7 +62,7 @@ if not LLM_BASE_URL_CONFIGS:
 AVAILABLE_MODELS = os.getenv("AVAILABLE_MODELS", "qwen3.5-plus")
 
 # ========== 裁判团配置 ==========
-
+# 使用两个相同模型实例作为裁判，以获得多次独立评分并平均
 JUDGE_PANEL = [
     "qwen3.5-plus",
     "qwen3.5-plus",

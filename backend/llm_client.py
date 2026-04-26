@@ -117,8 +117,7 @@ async def query_model_stream(
 
                         if hasattr(delta, 'tool_calls') and delta.tool_calls:
                             for tc_delta in delta.tool_calls:
-                                # 跳过非 function 类型的内置工具调用（如 web_search_preview）
-                                # 这类工具由 API 提供商在服务端执行，无需本地介入
+                                # 跳过非 function 类型的内置工具调用（由 API 提供商在服务端执行，无需本地介入）
                                 if not hasattr(tc_delta, 'function') or not tc_delta.function:
                                     continue
                                 idx = tc_delta.index
