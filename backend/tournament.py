@@ -11,14 +11,14 @@ import json
 from .log import logger
 from .models import MatchSession, Turn, PersonalityType, DifficultyLevel
 from .llm_client import query_model_stream
-from .tools import get_debate_tools, execute_tool
+from .tools import get_debate_tools, execute_tool, get_tools_for_enabled, use_dashscope_search
 from .judge import judge_match_with_panel_stream
 from .elo import update_elo_ratings
 from .database import save_match, update_match_status
 from .utils import generate_id
 
-# 比赛超时时间（秒）：15分钟
-MATCH_TIMEOUT_SECONDS = 15 * 60
+# 比赛超时时间（秒）：120分钟
+MATCH_TIMEOUT_SECONDS = 120 * 60
 
 
 async def run_tournament_match(
@@ -300,13 +300,16 @@ async def execute_turn_stream(
     if enabled_tools is None:
         enabled_tools = []
     
-    # 获取所有工具定义并按 enabled_tools 过滤
-    all_tools = get_debate_tools()
-    if enabled_tools:
-        tools = [t for t in all_tools if t['function']['name'] in enabled_tools]
-        logger.debug(f"使用工具: {[t['function']['name'] for t in tools]}")
-    else:
-        tools = []
+    # 根据 enabled_tools 获取工具定义
+    tools = get_tools_for_enabled(enabled_tools)
+    # 联网搜索通过 DashScope enable_search 参数实现，不作为工具定义传递
+    search_enabled = use_dashscope_search(enabled_tools)
+    if tools:
+        tool_names = [t['function']['name'] if t['type'] == 'function' else t['type'] for t in tools]
+        logger.debug(f"使用工具: {tool_names}")
+    if search_enabled:
+        logger.debug("启用 DashScope 内置联网搜索")
+    if not tools and not search_enabled:
         logger.debug("未启用任何工具")
     
     # 第一次流式调用 LLM (可能产生工具调用)
@@ -317,7 +320,8 @@ async def execute_turn_stream(
         model_id=model_id,
         messages=messages,
         tools=tools if tools else None,  # 如果没有工具，传 None
-        temperature=0.7
+        temperature=0.7,
+        enable_search=search_enabled
     ):
         if event["type"] == "content":
             # 内容增量
@@ -426,7 +430,8 @@ async def execute_turn_stream(
             model_id=model_id,
             messages=messages,
             tools=tools if tools else None,  # 如果没有工具，传 None
-            temperature=0.7
+            temperature=0.7,
+            enable_search=search_enabled
         ):
             if event["type"] == "content":
                 # 内容增量
@@ -523,7 +528,7 @@ def build_debate_prompt(
     if enabled_tools:
         tool_descriptions = {
             'python_interpreter': '- `python_interpreter`: 运行代码证明你的观点',
-            'web_search': '- `web_search`: 联网搜索权威资料',
+            'web_search': '- `web_search`: 厂商内置联网搜索，查找实时信息',
             'calculator': '- `calculator`: 精确计算'
         }
         

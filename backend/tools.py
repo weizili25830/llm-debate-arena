@@ -6,14 +6,12 @@
 """
 
 import asyncio
-import http.client
 import json
 import os
 import math
-from typing import Any, List, Union
+from typing import Any, List
 from datetime import datetime
 from loguru import logger
-from .config import SERPER_API_KEY
 
 
 async def execute_tool(tool_call: dict) -> Any:
@@ -27,13 +25,10 @@ async def execute_tool(tool_call: dict) -> Any:
     
     if tool_name == "python_interpreter":
         r = await execute_python(arguments['code'])
-    elif tool_name == "web_search":
-        r = await execute_search(arguments['query'])
     elif tool_name == "calculator":
         r = await execute_calculator(arguments['expression'])
     else:
         r = {"error": f"Unknown tool: {tool_name}"}
-    # logger.debug(f"工具执行结果: {r}")
     return r
 
 
@@ -94,105 +89,6 @@ async def execute_python(code: str, timeout: int = 30) -> dict:
     return result
 
 
-async def execute_search(query: Union[str, List[str]]) -> dict:
-    """
-    执行网络搜索 (使用 Serper API)
-    
-    支持单个查询或批量查询（最多5个）
-    """
-    
-    def contains_chinese_basic(text: str) -> bool:
-        return any('\u4E00' <= char <= '\u9FFF' for char in text)
-    
-    def google_search_with_serp(q: str) -> str:
-        """单个查询的搜索实现"""
-        if not SERPER_API_KEY:
-            return "SERPER_API_KEY is not set. Please set the SERPER_API_KEY environment variable."
-        
-        conn = http.client.HTTPSConnection("google.serper.dev")
-        
-        if contains_chinese_basic(q):
-            payload = json.dumps({
-                "q": q,
-                "location": "China",
-                "gl": "cn",
-                "hl": "zh-cn"
-            })
-        else:
-            payload = json.dumps({
-                "q": q,
-                "location": "United States",
-                "gl": "us",
-                "hl": "en"
-            })
-        
-        headers = {
-            'X-API-KEY': SERPER_API_KEY,
-            'Content-Type': 'application/json'
-        }
-        
-        res = None
-        for i in range(5):
-            try:
-                conn.request("POST", "/search", payload, headers)
-                res = conn.getresponse()
-                break
-            except Exception as e:
-                if i == 4:
-                    return f"Google search Timeout for query '{q}'. Please try again later."
-                continue
-        
-        data = res.read()
-        results = json.loads(data.decode("utf-8"))
-        
-        try:
-            if "organic" not in results:
-                raise Exception(f"No results found for query: '{q}'")
-            
-            web_snippets = []
-            idx = 0
-            if "organic" in results:
-                for page in results["organic"]:
-                    idx += 1
-                    date_published = ""
-                    if "date" in page:
-                        date_published = "\nDate published: " + page["date"]
-                    
-                    source = ""
-                    if "source" in page:
-                        source = "\nSource: " + page["source"]
-                    
-                    snippet = ""
-                    if "snippet" in page:
-                        snippet = "\n" + page["snippet"]
-                    
-                    redacted_version = f"{idx}. [{page['title']}]({page['link']}){date_published}{source}\n{snippet}"
-                    redacted_version = redacted_version.replace("Your browser can't play this video.", "")
-                    web_snippets.append(redacted_version)
-            
-            content = f"A Google search for '{q}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
-            return content
-        except:
-            return f"No results found for '{q}'. Try with a more general query."
-    
-    # 处理单个或多个查询
-    if isinstance(query, str):
-        response = google_search_with_serp(query)
-    else:
-        # 批量查询（最多5个）
-        queries = query[:5]  # 限制最多5个
-        responses = []
-        for q in queries:
-            responses.append(google_search_with_serp(q))
-        response = "\n=======\n".join(responses)
-    logger.debug(f"execute_search response: {response}, query: {query}")
-    return {
-        "query": query,
-        "response": response,
-        "timestamp": datetime.now().isoformat()
-    }
-
-
 async def execute_calculator(expression: str) -> dict:
     """
     执行精确数学计算
@@ -238,11 +134,14 @@ async def execute_calculator(expression: str) -> dict:
 
 def get_debate_tools() -> List[dict]:
     """
-    获取辩论工具集（正方和反方共享）
+    获取辩论工具集完整定义列表。
     
-    工具使用场景：
-    - 正方：证明代码能运行、提供性能数据、查证技术文档
-    - 反方：验证正方的断言、寻找反例、压力测试
+    包含：
+    - python_interpreter: 函数工具，由后端执行
+    - calculator: 函数工具，由后端执行
+    
+    注意：联网搜索通过 DashScope 的 enable_search 参数实现，
+    不作为工具定义传递，由 llm_client 在 extra_body 中注入。
     """
     return [
         {
@@ -265,26 +164,6 @@ def get_debate_tools() -> List[dict]:
         {
             "type": "function",
             "function": {
-                "name": "web_search",
-                "description": "执行 Google 搜索，用于查找事实、数据、最新信息。支持批量搜索（最多5个查询）",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": ["string", "array"],
-                            "items": {
-                                "type": "string"
-                            },
-                            "description": "搜索查询字符串，或字符串数组（批量搜索，最多5个）"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "calculator",
                 "description": "执行精确的数学计算（避免 LLM 幻觉）。支持基本运算、三角函数、对数等",
                 "parameters": {
@@ -300,3 +179,33 @@ def get_debate_tools() -> List[dict]:
             }
         }
     ]
+
+
+def use_dashscope_search(enabled_tools: List[str]) -> bool:
+    """
+    判断是否应启用 DashScope 厂商内置联网搜索（enable_search）。
+    
+    当 enabled_tools 包含 'web_search' 时返回 True，
+    由调用方在请求参数中注入 extra_body={"enable_search": True}。
+    """
+    return 'web_search' in (enabled_tools or [])
+
+
+def get_tools_for_enabled(enabled_tools: List[str]) -> List[dict]:
+    """
+    根据已启用的工具名称列表，返回对应的工具定义。
+    
+    工具名称到定义的映射：
+    - "python_interpreter" -> function 类型工具
+    - "web_search"         -> 不返回工具定义，改由 use_dashscope_search() 通过 enable_search 实现
+    - "calculator"         -> function 类型工具
+    """
+    if not enabled_tools:
+        return []
+    
+    result = []
+    for tool in get_debate_tools():
+        if tool['type'] == 'function':
+            if tool['function']['name'] in enabled_tools:
+                result.append(tool)
+    return result
