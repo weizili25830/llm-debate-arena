@@ -6,14 +6,12 @@
 """
 
 import asyncio
-import http.client
 import json
 import os
 import math
-from typing import Any, List, Union
+from typing import Any, List
 from datetime import datetime
 from loguru import logger
-from .config import SERPER_API_KEY, BING_API_KEY
 
 
 async def execute_tool(tool_call: dict) -> Any:
@@ -27,13 +25,10 @@ async def execute_tool(tool_call: dict) -> Any:
     
     if tool_name == "python_interpreter":
         r = await execute_python(arguments['code'])
-    elif tool_name == "web_search":
-        r = await execute_search(arguments['query'])
     elif tool_name == "calculator":
         r = await execute_calculator(arguments['expression'])
     else:
         r = {"error": f"Unknown tool: {tool_name}"}
-    # logger.debug(f"工具执行结果: {r}")
     return r
 
 
@@ -94,90 +89,6 @@ async def execute_python(code: str, timeout: int = 30) -> dict:
     return result
 
 
-async def execute_search(query: Union[str, List[str]]) -> dict:
-    """
-    执行网络搜索 (使用 Bing Search API)
-    
-    支持单个查询或批量查询（最多5个）
-    """
-    
-    def contains_chinese_basic(text: str) -> bool:
-        return any('\u4E00' <= char <= '\u9FFF' for char in text)
-    
-    def bing_search(q: str) -> str:
-        """单个查询的 Bing 搜索实现"""
-        if not BING_API_KEY:
-            return "BING_API_KEY is not set. Please set the BING_API_KEY environment variable."
-        
-        import urllib.parse
-        conn = http.client.HTTPSConnection("api.bing.microsoft.com")
-        
-        params = urllib.parse.urlencode({
-            "q": q,
-            "count": 10,
-            "mkt": "zh-CN" if contains_chinese_basic(q) else "en-US",
-        })
-        
-        headers = {
-            'Ocp-Apim-Subscription-Key': BING_API_KEY,
-            'Accept': 'application/json'
-        }
-        
-        res = None
-        for i in range(5):
-            try:
-                conn.request("GET", f"/v7.0/search?{params}", headers=headers)
-                res = conn.getresponse()
-                break
-            except Exception as e:
-                if i == 4:
-                    return f"Bing search Timeout for query '{q}'. Please try again later."
-                continue
-        
-        data = res.read()
-        results = json.loads(data.decode("utf-8"))
-        
-        try:
-            web_pages = results.get("webPages", {}).get("value", [])
-            if not web_pages:
-                raise Exception(f"No results found for query: '{q}'")
-            
-            web_snippets = []
-            for idx, page in enumerate(web_pages, 1):
-                date_published = ""
-                if "dateLastCrawled" in page:
-                    date_published = "\nDate published: " + page["dateLastCrawled"][:10]
-                
-                snippet = ""
-                if "snippet" in page:
-                    snippet = "\n" + page["snippet"]
-                
-                redacted_version = f"{idx}. [{page['name']}]({page['url']}){date_published}\n{snippet}"
-                web_snippets.append(redacted_version)
-            
-            content = f"A Bing search for '{q}' found {len(web_snippets)} results:\n\n## Web Results\n" + "\n\n".join(web_snippets)
-            return content
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-            return f"No results found for '{q}'. Try with a more general query."
-    
-    # 处理单个或多个查询
-    if isinstance(query, str):
-        response = bing_search(query)
-    else:
-        # 批量查询（最多5个）
-        queries = query[:5]  # 限制最多5个
-        responses = []
-        for q in queries:
-            responses.append(bing_search(q))
-        response = "\n=======\n".join(responses)
-    logger.debug(f"execute_search response: {response}, query: {query}")
-    return {
-        "query": query,
-        "response": response,
-        "timestamp": datetime.now().isoformat()
-    }
-
-
 async def execute_calculator(expression: str) -> dict:
     """
     执行精确数学计算
@@ -223,11 +134,12 @@ async def execute_calculator(expression: str) -> dict:
 
 def get_debate_tools() -> List[dict]:
     """
-    获取辩论工具集（正方和反方共享）
+    获取辩论工具集完整定义列表。
     
-    工具使用场景：
-    - 正方：证明代码能运行、提供性能数据、查证技术文档
-    - 反方：验证正方的断言、寻找反例、压力测试
+    包含：
+    - python_interpreter: 函数工具，由后端执行
+    - web_search_preview: 厂商内置联网搜索，由 API 提供商在服务端执行（无需后端执行）
+    - calculator: 函数工具，由后端执行
     """
     return [
         {
@@ -247,25 +159,10 @@ def get_debate_tools() -> List[dict]:
                 }
             }
         },
+        # 厂商内置联网搜索（OpenAI web_search_preview 等）
+        # 由 API 提供商在服务端执行，无需后端介入
         {
-            "type": "function",
-            "function": {
-                "name": "web_search",
-                "description": "执行 Bing 搜索，用于查找事实、数据、最新信息。支持批量搜索（最多5个查询）",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": ["string", "array"],
-                            "items": {
-                                "type": "string"
-                            },
-                            "description": "搜索查询字符串，或字符串数组（批量搜索，最多5个）"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
+            "type": "web_search_preview"
         },
         {
             "type": "function",
@@ -285,3 +182,26 @@ def get_debate_tools() -> List[dict]:
             }
         }
     ]
+
+
+def get_tools_for_enabled(enabled_tools: List[str]) -> List[dict]:
+    """
+    根据已启用的工具名称列表，返回对应的工具定义。
+    
+    工具名称到定义的映射：
+    - "python_interpreter" -> function 类型工具
+    - "web_search"         -> web_search_preview（厂商内置联网搜索）
+    - "calculator"         -> function 类型工具
+    """
+    if not enabled_tools:
+        return []
+    
+    result = []
+    for tool in get_debate_tools():
+        if tool['type'] == 'function':
+            if tool['function']['name'] in enabled_tools:
+                result.append(tool)
+        elif tool['type'] == 'web_search_preview':
+            if 'web_search' in enabled_tools:
+                result.append(tool)
+    return result

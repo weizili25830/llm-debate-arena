@@ -81,7 +81,8 @@ async def query_model_stream(
     }
     if tools:
         request_params["tools"] = tools
-        logger.debug(f"使用工具: {[t['function']['name'] for t in tools]}")
+        tool_names = [t['function']['name'] if t.get('type') == 'function' else t.get('type', '') for t in tools]
+        logger.debug(f"使用工具: {tool_names}")
 
     last_error = None
 
@@ -109,6 +110,10 @@ async def query_model_stream(
 
                         if hasattr(delta, 'tool_calls') and delta.tool_calls:
                             for tc_delta in delta.tool_calls:
+                                # 跳过非 function 类型的内置工具调用（如 web_search_preview）
+                                # 这类工具由 API 提供商在服务端执行，无需本地介入
+                                if not hasattr(tc_delta, 'function') or not tc_delta.function:
+                                    continue
                                 idx = tc_delta.index
                                 if idx not in tool_call_buffer:
                                     tool_call_buffer[idx] = {
@@ -118,11 +123,10 @@ async def query_model_stream(
                                     }
                                 if hasattr(tc_delta, 'id') and tc_delta.id:
                                     tool_call_buffer[idx]["id"] = tc_delta.id
-                                if hasattr(tc_delta, 'function') and tc_delta.function:
-                                    if hasattr(tc_delta.function, 'name') and tc_delta.function.name:
-                                        tool_call_buffer[idx]["function"]["name"] = tc_delta.function.name
-                                    if hasattr(tc_delta.function, 'arguments') and tc_delta.function.arguments:
-                                        tool_call_buffer[idx]["function"]["arguments"] += tc_delta.function.arguments
+                                if hasattr(tc_delta.function, 'name') and tc_delta.function.name:
+                                    tool_call_buffer[idx]["function"]["name"] = tc_delta.function.name
+                                if hasattr(tc_delta.function, 'arguments') and tc_delta.function.arguments:
+                                    tool_call_buffer[idx]["function"]["arguments"] += tc_delta.function.arguments
 
                 if tool_call_buffer:
                     accumulated_tool_calls = [tool_call_buffer[i] for i in sorted(tool_call_buffer.keys())]

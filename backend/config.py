@@ -61,9 +61,6 @@ if not LLM_BASE_URL_CONFIGS:
 
 AVAILABLE_MODELS = os.getenv("AVAILABLE_MODELS", "gpt-4o,gpt-4o-mini,gpt-5")
 
-# ========== Bing Search 配置 ==========
-BING_API_KEY = os.getenv("BING_API_KEY")
-
 # ========== 裁判团配置 ==========
 
 JUDGE_PANEL = [
@@ -92,5 +89,5 @@ ELO_CONFIG = {
     "k_factor_stable": 16,   # 成熟期 (> 30 场)
 }
 
-# tools
-SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+# tools（已废弃，厂商内置联网搜索无需 API key）
+# SERPER_API_KEY = os.getenv("SERPER_API_KEY")
