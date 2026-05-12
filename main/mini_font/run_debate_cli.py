@@ -25,7 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.database import init_db  # noqa: E402
 from backend.models import DifficultyLevel  # noqa: E402
 from backend.tournament import run_tournament_match  # noqa: E402
-from backend.config import AVAILABLE_MODELS, JUDGE_PANEL  # noqa: E402
+from backend.config import AVAILABLE_MODELS  # noqa: E402
 
 
 WINNER_PRO = "proponent"
@@ -33,6 +33,13 @@ WINNER_OPP = "opponent"
 WINNER_DRAW = "draw"
 WINNER_UNKNOWN = "unknown"
 DEFAULT_MODEL_ID = "qwen3.5-plus"
+PERSONALITY_OPTIONS = {
+    "1": ("humorous", "幽默"),
+    "2": ("academic", "学术"),
+    "3": ("rational", "理性"),
+    "4": ("aggressive", "激进"),
+    "5": ("diplomatic", "外交"),
+}
 
 
 def _prompt_text(prompt: str, default: str = "", required: bool = False) -> str:
@@ -90,7 +97,78 @@ def _prompt_model(prompt: str, default: str, available_models: List[str]) -> str
         print(f'模型 "{model}" 不在可用列表中，请从上方列表选择，或输入 q 退出。')
 
 
-async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, rounds: int) -> Dict:
+def _prompt_model_pool(available_models: List[str]) -> List[str]:
+    if not available_models:
+        return []
+    while True:
+        text = input("请输入本次选用模型（逗号分隔，直接回车默认全部）: ").strip()
+        if not text:
+            return available_models[:]
+        selected = [model.strip() for model in text.split(",") if model.strip()]
+        invalid = [model for model in selected if model not in available_models]
+        if invalid:
+            print(f"以下模型不可用: {', '.join(invalid)}，请重新输入。")
+            continue
+        if not selected:
+            print("至少选择一个模型。")
+            continue
+        deduplicated: List[str] = []
+        seen = set()
+        for model in selected:
+            if model not in seen:
+                seen.add(model)
+                deduplicated.append(model)
+        return deduplicated
+
+
+def _prompt_personality(role_label: str) -> str:
+    print(f"\n请选择{role_label}性格（输入数字）：")
+    print("1-幽默 2-学术 3-理性 4-激进 5-外交")
+    while True:
+        choice = input("请输入 1/2/3/4/5 [3]: ").strip() or "3"
+        if choice in PERSONALITY_OPTIONS:
+            personality, personality_name = PERSONALITY_OPTIONS[choice]
+            print(f"{role_label}性格已选择: {personality_name}")
+            return personality
+        print("输入无效，请输入 1/2/3/4/5。")
+
+
+def _prompt_judges(selectable_models: List[str], default_judges: List[str]) -> List[str]:
+    print("\n请选择裁判模型：")
+    print("直接回车：使用所有模型；输入模型 ID：继续逐个输入，输入 end 结束。")
+    first = input("请输入第一个裁判模型（或直接回车）: ").strip()
+    if not first:
+        return default_judges[:]
+
+    judges: List[str] = []
+    current = first
+    while True:
+        if current.lower() == "end":
+            break
+        if selectable_models and current not in selectable_models:
+            print(f'模型 "{current}" 不在可用列表中，请重新输入。')
+            current = input("继续输入裁判模型（输入 end 结束）: ").strip()
+            continue
+        if current not in judges:
+            judges.append(current)
+        current = input("继续输入裁判模型（输入 end 结束）: ").strip()
+
+    if not judges:
+        print("未选中裁判，默认使用所有模型。")
+        return default_judges[:]
+    return judges
+
+
+async def _run_game(
+    game_index: int,
+    topic: str,
+    proponent: str,
+    opponent: str,
+    proponent_personality: str,
+    opponent_personality: str,
+    rounds: int,
+    judges: List[str],
+) -> Dict:
     print(f"\n========== 第 {game_index} 局开始 ==========")
     winner = WINNER_UNKNOWN
     match_id = ""
@@ -100,10 +178,10 @@ async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, 
         topic_difficulty=DifficultyLevel.MEDIUM,
         prop_model_id=proponent,
         opp_model_id=opponent,
-        prop_personality="rational",
-        opp_personality="rational",
+        prop_personality=proponent_personality,
+        opp_personality=opponent_personality,
         rounds=rounds,
-        judges=JUDGE_PANEL,
+        judges=judges,
         enabled_tools=[],
         same_model_battle=(proponent == opponent),
         user_id=None,
@@ -145,10 +223,27 @@ async def _main() -> None:
     else:
         print("（未配置，可手动输入任意模型 ID）")
 
-    proponent = _prompt_model("请输入正方模型 ID", default_model, available_models)
-    opponent = _prompt_model("请输入反方模型 ID", default_model, available_models)
+    selected_models = _prompt_model_pool(available_models)
+    if selected_models:
+        print(f"\n本次选用模型: {', '.join(selected_models)}")
+    else:
+        print("\n本次选用模型: 手动输入")
+
+    selectable_models = selected_models if selected_models else available_models
+    proponent = _prompt_model("请输入正方模型 ID", default_model, selectable_models)
+    opponent = _prompt_model("请输入反方模型 ID", default_model, selectable_models)
+    proponent_personality = _prompt_personality("正方")
+    opponent_personality = _prompt_personality("反方")
     games = _prompt_int("请输入局数", 1)
     rounds_per_game = _prompt_int("请输入每局轮数", 3)
+    if selected_models:
+        default_judges = selected_models[:]
+    elif available_models:
+        default_judges = available_models[:]
+    else:
+        default_judges = [default_model]
+    judges = _prompt_judges(selectable_models, default_judges)
+    print(f"裁判模型: {', '.join(judges)}")
 
     init_db()
 
@@ -158,15 +253,31 @@ async def _main() -> None:
         WINNER_DRAW: 0,
         WINNER_UNKNOWN: 0,
     }
-    for i in range(1, games + 1):
-        result = await _run_game(
-            game_index=i,
-            topic=topic,
-            proponent=proponent,
-            opponent=opponent,
-            rounds=rounds_per_game,
+    tasks = [
+        asyncio.create_task(
+            _run_game(
+                game_index=i,
+                topic=topic,
+                proponent=proponent,
+                opponent=opponent,
+                proponent_personality=proponent_personality,
+                opponent_personality=opponent_personality,
+                rounds=rounds_per_game,
+                judges=judges,
+            )
         )
-        winner = result.get("winner", WINNER_UNKNOWN)
+        for i in range(1, games + 1)
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for i, result in enumerate(results, start=1):
+        if isinstance(result, Exception):
+            print(
+                f"[错误] 第 {i} 局执行失败 (topic={topic}, 正方={proponent}, 反方={opponent}): {result}"
+            )
+            winner = WINNER_UNKNOWN
+        else:
+            winner = result.get("winner", WINNER_UNKNOWN)
         if winner not in summary:
             print(f"[警告] 未知胜者类型: {winner}，将计入 unknown")
             winner = WINNER_UNKNOWN
@@ -176,6 +287,9 @@ async def _main() -> None:
     print(f"辩题: {topic}")
     print(f"正方: {proponent}")
     print(f"反方: {opponent}")
+    print(f"正方性格: {proponent_personality}")
+    print(f"反方性格: {opponent_personality}")
+    print(f"裁判: {', '.join(judges)}")
     print(f"总局数: {games}，每局轮数: {rounds_per_game}")
     print(
         f"正方胜: {summary[WINNER_PRO]} | 反方胜: {summary[WINNER_OPP]} | "
