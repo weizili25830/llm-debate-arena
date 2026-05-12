@@ -64,13 +64,22 @@ def _get_available_models() -> List[str]:
 
 
 def _prompt_model(prompt: str, default: str, available_models: List[str]) -> str:
+    exit_words = {"q", "quit", "exit"}
     if not available_models:
-        return _prompt_text(prompt, default=default, required=True)
+        while True:
+            model = _prompt_text(prompt, default=default, required=True)
+            if model.lower() in exit_words:
+                print("已取消输入，脚本退出。")
+                raise SystemExit(0)
+            return model
     while True:
         model = _prompt_text(prompt, default=default, required=True)
+        if model.lower() in exit_words:
+            print("已取消输入，脚本退出。")
+            raise SystemExit(0)
         if model in available_models:
             return model
-        print(f'模型 "{model}" 不在可用列表中，请从上方列表选择。')
+        print(f'模型 "{model}" 不在可用列表中，请从上方列表选择，或输入 q 退出。')
 
 
 async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, rounds: int) -> Dict:
