@@ -113,8 +113,10 @@ def _prompt_model_pool(available_models: List[str]) -> List[str]:
             print("至少选择一个模型。")
             continue
         deduplicated: List[str] = []
+        seen = set()
         for model in selected:
-            if model not in deduplicated:
+            if model not in seen:
+                seen.add(model)
                 deduplicated.append(model)
         return deduplicated
 
@@ -145,7 +147,9 @@ def _prompt_judges(selectable_models: List[str], default_judges: List[str]) -> L
             break
         if selectable_models and current not in selectable_models:
             print(f'模型 "{current}" 不在可用列表中，请重新输入。')
-        elif current not in judges:
+            current = input("继续输入裁判模型（输入 end 结束）: ").strip()
+            continue
+        if current not in judges:
             judges.append(current)
         current = input("继续输入裁判模型（输入 end 结束）: ").strip()
 
