@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+命令行辩论脚本：无需启动前端，直接输入参数运行比赛。
+"""
+
+import argparse
+import asyncio
+import sys
+from pathlib import Path
+from typing import Dict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database import init_db  # noqa: E402
+from backend.models import DifficultyLevel  # noqa: E402
+from backend.tournament import run_tournament_match  # noqa: E402
+
+
+def _prompt_if_missing(value: str, prompt: str, default: str = "") -> str:
+    if value:
+        return value
+    text = input(f"{prompt}{' [' + default + ']' if default else ''}: ").strip()
+    return text or default
+
+
+def _prompt_int_if_missing(value: int, prompt: str, default: int) -> int:
+    if value is not None:
+        return value
+    while True:
+        text = input(f"{prompt} [{default}]: ").strip() or str(default)
+        try:
+            number = int(text)
+            if number <= 0:
+                print("请输入大于 0 的整数。")
+                continue
+            return number
+        except ValueError:
+            print("请输入整数。")
+
+
+async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, rounds: int) -> Dict:
+    print(f"\n========== 第 {game_index} 局开始 ==========")
+    winner = "unknown"
+    match_id = ""
+
+    async for event in run_tournament_match(
+        topic=topic,
+        topic_difficulty=DifficultyLevel.MEDIUM,
+        prop_model_id=proponent,
+        opp_model_id=opponent,
+        prop_personality="rational",
+        opp_personality="rational",
+        rounds=rounds,
+        judges=[proponent, opponent],
+        enabled_tools=[],
+        same_model_battle=(proponent == opponent),
+        user_id=None,
+    ):
+        event_type = event.get("type")
+        if event_type == "match_init":
+            match_id = event.get("match_id", "")
+            print(f"Match ID: {match_id}")
+        elif event_type == "status":
+            print(f"[状态] {event.get('content', '')}")
+        elif event_type == "turn_complete":
+            turn = event.get("turn", {})
+            role = "正方" if turn.get("speaker_role") == "proponent" else "反方"
+            round_no = turn.get("round_number", "?")
+            content = turn.get("content", "").strip()
+            print(f"\n[{role} Round {round_no}]")
+            print(content)
+        elif event_type == "judge_complete":
+            result = event.get("result", {})
+            winner = result.get("winner", "unknown")
+            print(f"\n[裁判结果] winner={winner}")
+        elif event_type == "error":
+            print(f"\n[错误] {event.get('content', 'unknown error')}")
+        elif event_type == "match_end":
+            print(f"\n========== 第 {game_index} 局结束 ==========")
+
+    return {"match_id": match_id, "winner": winner}
+
+
+async def _main() -> None:
+    parser = argparse.ArgumentParser(description="LLM Debate Arena 命令行辩论脚本")
+    parser.add_argument("--topic", type=str, help="辩题")
+    parser.add_argument("--proponent", type=str, help="正方模型 ID")
+    parser.add_argument("--opponent", type=str, help="反方模型 ID")
+    parser.add_argument("--games", type=int, help="局数（总共打几局）")
+    parser.add_argument("--rounds-per-game", type=int, help="每局轮数")
+    args = parser.parse_args()
+
+    topic = _prompt_if_missing(args.topic, "请输入辩题")
+    proponent = _prompt_if_missing(args.proponent, "请输入正方模型 ID", "qwen3.5-plus")
+    opponent = _prompt_if_missing(args.opponent, "请输入反方模型 ID", "qwen3.5-plus")
+    games = _prompt_int_if_missing(args.games, "请输入局数", 1)
+    rounds_per_game = _prompt_int_if_missing(args.rounds_per_game, "请输入每局轮数", 3)
+
+    init_db()
+
+    summary: Dict[str, int] = {"proponent": 0, "opponent": 0, "draw": 0, "unknown": 0}
+    for i in range(1, games + 1):
+        result = await _run_game(
+            game_index=i,
+            topic=topic,
+            proponent=proponent,
+            opponent=opponent,
+            rounds=rounds_per_game,
+        )
+        winner = result.get("winner", "unknown")
+        summary[winner if winner in summary else "unknown"] += 1
+
+    print("\n========== 总结 ==========")
+    print(f"辩题: {topic}")
+    print(f"正方: {proponent}")
+    print(f"反方: {opponent}")
+    print(f"总局数: {games}，每局轮数: {rounds_per_game}")
+    print(f"正方胜: {summary['proponent']} | 反方胜: {summary['opponent']} | 平局: {summary['draw']} | 未知: {summary['unknown']}")
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
