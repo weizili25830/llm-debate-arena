@@ -52,7 +52,10 @@ def _prompt_int(prompt: str, default: int) -> int:
 
 def _get_available_models() -> List[str]:
     models = [model.strip() for model in AVAILABLE_MODELS.split(",") if model.strip()]
-    return models or [DEFAULT_MODEL_ID]
+    if not models:
+        print(f"未配置 AVAILABLE_MODELS，默认使用模型：{DEFAULT_MODEL_ID}")
+        return [DEFAULT_MODEL_ID]
+    return models
 
 
 def _prompt_model(prompt: str, default: str, available_models: List[str]) -> str:
@@ -60,7 +63,7 @@ def _prompt_model(prompt: str, default: str, available_models: List[str]) -> str
         model = _prompt_text(prompt, default=default, required=True)
         if model in available_models:
             return model
-        print("输入模型不在可用列表中，请从上方列表选择。")
+        print(f'模型 "{model}" 不在可用列表中，请从上方列表选择。')
 
 
 async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, rounds: int) -> Dict:
