@@ -10,7 +10,15 @@ from pathlib import Path
 from typing import Dict, List
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+def _detect_project_root() -> Path:
+    current_file = Path(__file__).resolve()
+    for candidate in [current_file.parent, *current_file.parents]:
+        if (candidate / "backend").is_dir():
+            return candidate
+    return current_file.parent
+
+
+PROJECT_ROOT = _detect_project_root()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
