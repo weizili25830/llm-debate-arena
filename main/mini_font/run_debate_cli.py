@@ -8,7 +8,7 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,16 +18,29 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.database import init_db  # noqa: E402
 from backend.models import DifficultyLevel  # noqa: E402
 from backend.tournament import run_tournament_match  # noqa: E402
+from backend.config import JUDGE_PANEL  # noqa: E402
 
 
-def _prompt_if_missing(value: str, prompt: str, default: str = "") -> str:
+WINNER_PRO = "proponent"
+WINNER_OPP = "opponent"
+WINNER_DRAW = "draw"
+WINNER_UNKNOWN = "unknown"
+DEFAULT_MODEL_ID = "qwen3.5-plus"
+
+
+def _prompt_if_missing(value: str, prompt: str, default: str = "", required: bool = False) -> str:
     if value:
         return value
-    text = input(f"{prompt}{' [' + default + ']' if default else ''}: ").strip()
-    return text or default
+    while True:
+        text = input(f"{prompt}{' [' + default + ']' if default else ''}: ").strip()
+        result = text or default
+        if required and not result:
+            print("该字段不能为空，请重新输入。")
+            continue
+        return result
 
 
-def _prompt_int_if_missing(value: int, prompt: str, default: int) -> int:
+def _prompt_int_if_missing(value: Optional[int], prompt: str, default: int) -> int:
     if value is not None:
         return value
     while True:
@@ -44,7 +57,7 @@ def _prompt_int_if_missing(value: int, prompt: str, default: int) -> int:
 
 async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, rounds: int) -> Dict:
     print(f"\n========== 第 {game_index} 局开始 ==========")
-    winner = "unknown"
+    winner = WINNER_UNKNOWN
     match_id = ""
 
     async for event in run_tournament_match(
@@ -55,7 +68,7 @@ async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, 
         prop_personality="rational",
         opp_personality="rational",
         rounds=rounds,
-        judges=[proponent, opponent],
+        judges=JUDGE_PANEL,
         enabled_tools=[],
         same_model_battle=(proponent == opponent),
         user_id=None,
@@ -94,15 +107,20 @@ async def _main() -> None:
     parser.add_argument("--rounds-per-game", type=int, help="每局轮数")
     args = parser.parse_args()
 
-    topic = _prompt_if_missing(args.topic, "请输入辩题")
-    proponent = _prompt_if_missing(args.proponent, "请输入正方模型 ID", "qwen3.5-plus")
-    opponent = _prompt_if_missing(args.opponent, "请输入反方模型 ID", "qwen3.5-plus")
+    topic = _prompt_if_missing(args.topic, "请输入辩题", default="", required=True)
+    proponent = _prompt_if_missing(args.proponent, "请输入正方模型 ID", DEFAULT_MODEL_ID)
+    opponent = _prompt_if_missing(args.opponent, "请输入反方模型 ID", DEFAULT_MODEL_ID)
     games = _prompt_int_if_missing(args.games, "请输入局数", 1)
     rounds_per_game = _prompt_int_if_missing(args.rounds_per_game, "请输入每局轮数", 3)
 
     init_db()
 
-    summary: Dict[str, int] = {"proponent": 0, "opponent": 0, "draw": 0, "unknown": 0}
+    summary: Dict[str, int] = {
+        WINNER_PRO: 0,
+        WINNER_OPP: 0,
+        WINNER_DRAW: 0,
+        WINNER_UNKNOWN: 0,
+    }
     for i in range(1, games + 1):
         result = await _run_game(
             game_index=i,
@@ -111,15 +129,21 @@ async def _main() -> None:
             opponent=opponent,
             rounds=rounds_per_game,
         )
-        winner = result.get("winner", "unknown")
-        summary[winner if winner in summary else "unknown"] += 1
+        winner = result.get("winner", WINNER_UNKNOWN)
+        if winner not in summary:
+            print(f"[警告] 未知胜者类型: {winner}，将计入 unknown")
+            winner = WINNER_UNKNOWN
+        summary[winner] += 1
 
     print("\n========== 总结 ==========")
     print(f"辩题: {topic}")
     print(f"正方: {proponent}")
     print(f"反方: {opponent}")
     print(f"总局数: {games}，每局轮数: {rounds_per_game}")
-    print(f"正方胜: {summary['proponent']} | 反方胜: {summary['opponent']} | 平局: {summary['draw']} | 未知: {summary['unknown']}")
+    print(
+        f"正方胜: {summary[WINNER_PRO]} | 反方胜: {summary[WINNER_OPP]} | "
+        f"平局: {summary[WINNER_DRAW]} | 未知: {summary[WINNER_UNKNOWN]}"
+    )
 
 
 if __name__ == "__main__":
