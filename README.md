@@ -166,6 +166,7 @@ python main/mini_font/run_debate_cli.py
 
 脚本会直接提示输入：
 - 辩题
+- 当前可用模型列表（随后从列表中选择）
 - 正方模型 ID
 - 反方模型 ID
 - 局数
