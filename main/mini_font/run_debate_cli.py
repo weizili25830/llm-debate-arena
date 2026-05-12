@@ -4,11 +4,10 @@
 命令行辩论脚本：无需启动前端，直接输入参数运行比赛。
 """
 
-import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.database import init_db  # noqa: E402
 from backend.models import DifficultyLevel  # noqa: E402
 from backend.tournament import run_tournament_match  # noqa: E402
-from backend.config import JUDGE_PANEL  # noqa: E402
+from backend.config import AVAILABLE_MODELS, JUDGE_PANEL  # noqa: E402
 
 
 WINNER_PRO = "proponent"
@@ -28,9 +27,7 @@ WINNER_UNKNOWN = "unknown"
 DEFAULT_MODEL_ID = "qwen3.5-plus"
 
 
-def _prompt_if_missing(value: str, prompt: str, default: str = "", required: bool = False) -> str:
-    if value:
-        return value
+def _prompt_text(prompt: str, default: str = "", required: bool = False) -> str:
     while True:
         text = input(f"{prompt}{' [' + default + ']' if default else ''}: ").strip()
         result = text or default
@@ -40,9 +37,7 @@ def _prompt_if_missing(value: str, prompt: str, default: str = "", required: boo
         return result
 
 
-def _prompt_int_if_missing(value: Optional[int], prompt: str, default: int) -> int:
-    if value is not None:
-        return value
+def _prompt_int(prompt: str, default: int) -> int:
     while True:
         text = input(f"{prompt} [{default}]: ").strip() or str(default)
         try:
@@ -53,6 +48,38 @@ def _prompt_int_if_missing(value: Optional[int], prompt: str, default: int) -> i
             return number
         except ValueError:
             print("请输入整数。")
+
+
+def _get_available_models() -> List[str]:
+    if isinstance(AVAILABLE_MODELS, str):
+        models = [model.strip() for model in AVAILABLE_MODELS.split(",") if model.strip()]
+    elif isinstance(AVAILABLE_MODELS, (list, tuple, set)):
+        models = [str(model).strip() for model in AVAILABLE_MODELS if str(model).strip()]
+    else:
+        models = []
+    if not models:
+        print("未配置 AVAILABLE_MODELS，将允许手动输入模型 ID。")
+        return []
+    return models
+
+
+def _prompt_model(prompt: str, default: str, available_models: List[str]) -> str:
+    exit_words = {"q", "quit", "exit"}
+    if not available_models:
+        while True:
+            model = _prompt_text(prompt, default=default, required=True)
+            if model.lower() in exit_words:
+                print("已取消输入，脚本退出。")
+                raise SystemExit(0)
+            return model
+    while True:
+        model = _prompt_text(prompt, default=default, required=True)
+        if model.lower() in exit_words:
+            print("已取消输入，脚本退出。")
+            raise SystemExit(0)
+        if model in available_models:
+            return model
+        print(f'模型 "{model}" 不在可用列表中，请从上方列表选择，或输入 q 退出。')
 
 
 async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, rounds: int) -> Dict:
@@ -99,19 +126,21 @@ async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, 
 
 
 async def _main() -> None:
-    parser = argparse.ArgumentParser(description="LLM Debate Arena 命令行辩论脚本")
-    parser.add_argument("--topic", type=str, help="辩题")
-    parser.add_argument("--proponent", type=str, help="正方模型 ID")
-    parser.add_argument("--opponent", type=str, help="反方模型 ID")
-    parser.add_argument("--games", type=int, help="局数（总共打几局）")
-    parser.add_argument("--rounds-per-game", type=int, help="每局轮数")
-    args = parser.parse_args()
+    topic = _prompt_text("请输入辩题", required=True)
+    available_models = _get_available_models()
+    default_model = available_models[0] if available_models else DEFAULT_MODEL_ID
 
-    topic = _prompt_if_missing(args.topic, "请输入辩题", default="", required=True)
-    proponent = _prompt_if_missing(args.proponent, "请输入正方模型 ID", DEFAULT_MODEL_ID)
-    opponent = _prompt_if_missing(args.opponent, "请输入反方模型 ID", DEFAULT_MODEL_ID)
-    games = _prompt_int_if_missing(args.games, "请输入局数", 1)
-    rounds_per_game = _prompt_int_if_missing(args.rounds_per_game, "请输入每局轮数", 3)
+    print("\n当前可用模型：")
+    if available_models:
+        for idx, model in enumerate(available_models, 1):
+            print(f"{idx}. {model}")
+    else:
+        print("（未配置，可手动输入任意模型 ID）")
+
+    proponent = _prompt_model("请输入正方模型 ID", default_model, available_models)
+    opponent = _prompt_model("请输入反方模型 ID", default_model, available_models)
+    games = _prompt_int("请输入局数", 1)
+    rounds_per_game = _prompt_int("请输入每局轮数", 3)
 
     init_db()
 
