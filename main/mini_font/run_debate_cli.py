@@ -10,7 +10,15 @@ from pathlib import Path
 from typing import Dict, List
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+def _detect_project_root() -> Path:
+    current_file = Path(__file__).resolve()
+    for candidate in current_file.parents:
+        if (candidate / "backend").is_dir():
+            return candidate
+    raise RuntimeError("未找到项目根目录：请确认脚本位于包含 backend 目录的项目内。")
+
+
+PROJECT_ROOT = _detect_project_root()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
