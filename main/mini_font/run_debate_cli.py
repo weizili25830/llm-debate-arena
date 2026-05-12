@@ -53,12 +53,14 @@ def _prompt_int(prompt: str, default: int) -> int:
 def _get_available_models() -> List[str]:
     models = [model.strip() for model in AVAILABLE_MODELS.split(",") if model.strip()]
     if not models:
-        print(f"未配置 AVAILABLE_MODELS，默认使用模型：{DEFAULT_MODEL_ID}")
-        return [DEFAULT_MODEL_ID]
+        print("未配置 AVAILABLE_MODELS，将允许手动输入模型 ID。")
+        return []
     return models
 
 
 def _prompt_model(prompt: str, default: str, available_models: List[str]) -> str:
+    if not available_models:
+        return _prompt_text(prompt, default=default, required=True)
     while True:
         model = _prompt_text(prompt, default=default, required=True)
         if model in available_models:
@@ -110,13 +112,16 @@ async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, 
 
 
 async def _main() -> None:
-    topic = _prompt_text("请输入辩题", default="", required=True)
+    topic = _prompt_text("请输入辩题", required=True)
     available_models = _get_available_models()
     default_model = available_models[0] if available_models else DEFAULT_MODEL_ID
 
     print("\n当前可用模型：")
-    for idx, model in enumerate(available_models, 1):
-        print(f"{idx}. {model}")
+    if available_models:
+        for idx, model in enumerate(available_models, 1):
+            print(f"{idx}. {model}")
+    else:
+        print("（未配置，可手动输入任意模型 ID）")
 
     proponent = _prompt_model("请输入正方模型 ID", default_model, available_models)
     opponent = _prompt_model("请输入反方模型 ID", default_model, available_models)
