@@ -112,7 +112,11 @@ def _prompt_model_pool(available_models: List[str]) -> List[str]:
         if not selected:
             print("至少选择一个模型。")
             continue
-        return list(dict.fromkeys(selected))
+        deduplicated: List[str] = []
+        for model in selected:
+            if model not in deduplicated:
+                deduplicated.append(model)
+        return deduplicated
 
 
 def _prompt_personality(role_label: str) -> str:
@@ -221,15 +225,20 @@ async def _main() -> None:
     else:
         print("\n本次选用模型: 手动输入")
 
-    model_candidates = selected_models if selected_models else available_models
-    proponent = _prompt_model("请输入正方模型 ID", default_model, model_candidates)
-    opponent = _prompt_model("请输入反方模型 ID", default_model, model_candidates)
+    selectable_models = selected_models if selected_models else available_models
+    proponent = _prompt_model("请输入正方模型 ID", default_model, selectable_models)
+    opponent = _prompt_model("请输入反方模型 ID", default_model, selectable_models)
     proponent_personality = _prompt_personality("正方")
     opponent_personality = _prompt_personality("反方")
     games = _prompt_int("请输入局数", 1)
     rounds_per_game = _prompt_int("请输入每局轮数", 3)
-    default_judges = selected_models[:] if selected_models else (available_models[:] if available_models else [default_model])
-    judges = _prompt_judges(model_candidates, default_judges)
+    if selected_models:
+        default_judges = selected_models[:]
+    elif available_models:
+        default_judges = available_models[:]
+    else:
+        default_judges = [default_model]
+    judges = _prompt_judges(selectable_models, default_judges)
     print(f"裁判模型: {', '.join(judges)}")
 
     init_db()
