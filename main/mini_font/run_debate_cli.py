@@ -25,7 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.database import init_db  # noqa: E402
 from backend.models import DifficultyLevel  # noqa: E402
 from backend.tournament import run_tournament_match  # noqa: E402
-from backend.config import AVAILABLE_MODELS, JUDGE_PANEL  # noqa: E402
+from backend.config import AVAILABLE_MODELS  # noqa: E402
 
 
 WINNER_PRO = "proponent"
@@ -90,7 +90,14 @@ def _prompt_model(prompt: str, default: str, available_models: List[str]) -> str
         print(f'模型 "{model}" 不在可用列表中，请从上方列表选择，或输入 q 退出。')
 
 
-async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, rounds: int) -> Dict:
+async def _run_game(
+    game_index: int,
+    topic: str,
+    proponent: str,
+    opponent: str,
+    rounds: int,
+    judges: List[str],
+) -> Dict:
     print(f"\n========== 第 {game_index} 局开始 ==========")
     winner = WINNER_UNKNOWN
     match_id = ""
@@ -103,7 +110,7 @@ async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, 
         prop_personality="rational",
         opp_personality="rational",
         rounds=rounds,
-        judges=JUDGE_PANEL,
+        judges=judges,
         enabled_tools=[],
         same_model_battle=(proponent == opponent),
         user_id=None,
@@ -149,6 +156,8 @@ async def _main() -> None:
     opponent = _prompt_model("请输入反方模型 ID", default_model, available_models)
     games = _prompt_int("请输入局数", 1)
     rounds_per_game = _prompt_int("请输入每局轮数", 3)
+    judges = available_models[:] if available_models else [default_model]
+    print(f"默认裁判模型: {', '.join(judges)}")
 
     init_db()
 
@@ -158,15 +167,27 @@ async def _main() -> None:
         WINNER_DRAW: 0,
         WINNER_UNKNOWN: 0,
     }
-    for i in range(1, games + 1):
-        result = await _run_game(
-            game_index=i,
-            topic=topic,
-            proponent=proponent,
-            opponent=opponent,
-            rounds=rounds_per_game,
+    tasks = [
+        asyncio.create_task(
+            _run_game(
+                game_index=i,
+                topic=topic,
+                proponent=proponent,
+                opponent=opponent,
+                rounds=rounds_per_game,
+                judges=judges,
+            )
         )
-        winner = result.get("winner", WINNER_UNKNOWN)
+        for i in range(1, games + 1)
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for i, result in enumerate(results, start=1):
+        if isinstance(result, Exception):
+            print(f"[错误] 第 {i} 局执行失败: {result}")
+            winner = WINNER_UNKNOWN
+        else:
+            winner = result.get("winner", WINNER_UNKNOWN)
         if winner not in summary:
             print(f"[警告] 未知胜者类型: {winner}，将计入 unknown")
             winner = WINNER_UNKNOWN
