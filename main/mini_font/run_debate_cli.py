@@ -184,7 +184,9 @@ async def _main() -> None:
     results = await asyncio.gather(*tasks, return_exceptions=True)
     for i, result in enumerate(results, start=1):
         if isinstance(result, Exception):
-            print(f"[错误] 第 {i} 局执行失败: {result}")
+            print(
+                f"[错误] 第 {i} 局执行失败 (topic={topic}, 正方={proponent}, 反方={opponent}): {result}"
+            )
             winner = WINNER_UNKNOWN
         else:
             winner = result.get("winner", WINNER_UNKNOWN)
