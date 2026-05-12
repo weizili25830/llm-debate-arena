@@ -51,8 +51,12 @@ def _prompt_int(prompt: str, default: int) -> int:
 
 
 def _get_available_models() -> List[str]:
-    raw_models = AVAILABLE_MODELS if isinstance(AVAILABLE_MODELS, str) else ""
-    models = [model.strip() for model in raw_models.split(",") if model.strip()]
+    if isinstance(AVAILABLE_MODELS, str):
+        models = [model.strip() for model in AVAILABLE_MODELS.split(",") if model.strip()]
+    elif isinstance(AVAILABLE_MODELS, (list, tuple, set)):
+        models = [str(model).strip() for model in AVAILABLE_MODELS if str(model).strip()]
+    else:
+        models = []
     if not models:
         print("未配置 AVAILABLE_MODELS，将允许手动输入模型 ID。")
         return []
