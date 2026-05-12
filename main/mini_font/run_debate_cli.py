@@ -88,7 +88,7 @@ async def _run_game(game_index: int, topic: str, proponent: str, opponent: str, 
             print(content)
         elif event_type == "judge_complete":
             result = event.get("result", {})
-            winner = result.get("winner", "unknown")
+            winner = result.get("winner", WINNER_UNKNOWN)
             print(f"\n[裁判结果] winner={winner}")
         elif event_type == "error":
             print(f"\n[错误] {event.get('content', 'unknown error')}")
