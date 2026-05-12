@@ -12,10 +12,10 @@ from typing import Dict, List
 
 def _detect_project_root() -> Path:
     current_file = Path(__file__).resolve()
-    for candidate in [current_file.parent, *current_file.parents]:
+    for candidate in current_file.parents:
         if (candidate / "backend").is_dir():
             return candidate
-    return current_file.parent
+    raise RuntimeError("未找到项目根目录：请确认脚本位于包含 backend 目录的项目内。")
 
 
 PROJECT_ROOT = _detect_project_root()
