@@ -158,6 +158,19 @@ npm run preview
 sh start.sh
 ```
 
+#### 命令行直接发起辩论（无需启动前端）
+
+```bash
+python main/mini_font/run_debate_cli.py
+```
+
+脚本会直接提示输入：
+- 辩题
+- 正方模型 ID
+- 反方模型 ID
+- 局数
+- 每局轮数
+
 
 ## 🔧 配置说明
 
